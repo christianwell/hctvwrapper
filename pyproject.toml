@@ -10,7 +10,7 @@ readme = "README.md"
 requires-python = ">=3.10"
 license = "MIT"
 authors = [
-    { name = "Christian Well", email = "christandubsky20@gmail.com" },
+    { name = "Christian Well" },
 ]
 keywords = ["hackclub", "hackclub.tv", "bot", "websocket", "chat", "wrapper"]
 classifiers = [
