@@ -43,6 +43,7 @@ th{background:var(--surface);color:var(--muted);font-weight:600}
 <h2>hctvwrapper</h2>
 <ul>
 <li><a href="#install">Install</a></li>
+<li><a href="#token">Getting a Bot Token</a></li>
 <li><a href="#quickstart">Quick Start</a></li>
 <li><a href="#bot">Bot</a></li>
 <li><a href="#events">Events</a></li>
@@ -53,6 +54,7 @@ th{background:var(--surface);color:var(--muted);font-weight:600}
 <li><a href="#moderation">Moderation</a></li>
 <li><a href="#emojis">Emojis</a></li>
 <li><a href="#async">Async Usage</a></li>
+<li><a href="#errors">Error Handling</a></li>
 <li><a href="#models">Models Reference</a></li>
 <li><a href="#examples">Examples</a></li>
 </ul>
@@ -65,8 +67,16 @@ th{background:var(--surface);color:var(--muted);font-weight:600}
 
 <!-- INSTALL -->
 <h2 id="install">Install</h2>
-<pre><code>pip install --index-url http://rpi5:8099/simple/ --trusted-host rpi5 hctvwrapper</code></pre>
+<pre><code>pip install hctvwrapper</code></pre>
 <p>Only dependency: <code>websockets</code> — requires Python 3.10+</p>
+
+<!-- TOKEN -->
+<h2 id="token">Getting a Bot Token</h2>
+<ol>
+<li>Go to <a href="https://hackclub.tv">hackclub.tv</a></li>
+<li>Create a bot account and get your API key (starts with <code>hctvb_</code>)</li>
+<li>Set it as an environment variable: <code>export BOT_TOKEN=hctvb_xxx</code></li>
+</ol>
 
 <!-- QUICKSTART -->
 <h2 id="quickstart">Quick Start</h2>
@@ -156,6 +166,20 @@ bot.run(<span class="st">"hctvb_your_token"</span>, channel=<span class="st">"bo
 <pre><code><span class="op">@</span>bot.event
 <span class="kw">async def</span> <span class="fn">on_moderation_error</span>(error, channel):
     <span class="bi">print</span>(<span class="st">f"Error: </span>{error.code}<span class="st"> — </span>{error.message}<span class="st">"</span>)</code></pre>
+
+<h3>on_emoji_response(emojis)</h3>
+<p>Fired when emoji URL lookups return results.</p>
+<pre><code><span class="op">@</span>bot.event
+<span class="kw">async def</span> <span class="fn">on_emoji_response</span>(emojis):
+    <span class="cm"># emojis = {"yay": "https://...", "aga": "https://..."}</span>
+    <span class="bi">print</span>(emojis)</code></pre>
+
+<h3>on_emoji_search(results)</h3>
+<p>Fired when an emoji search returns results.</p>
+<pre><code><span class="op">@</span>bot.event
+<span class="kw">async def</span> <span class="fn">on_emoji_search</span>(results):
+    <span class="cm"># results = ["yay", "yay-bounce", "yay-spin", ...]</span>
+    <span class="bi">print</span>(results)</code></pre>
 
 <div class="note"><strong>ℹ Error codes:</strong> FORBIDDEN, RATE_LIMIT, SLOW_MODE, TIMED_OUT, BANNED, MESSAGE_TOO_LONG, BLOCKED_TERM, INVALID_TARGET, INVALID_REQUEST, NOT_FOUND</div>
 
@@ -273,6 +297,20 @@ bot.run(<span class="st">"hctvb_your_token"</span>, channel=<span class="st">"bo
     <span class="kw">await</span> bot.start(<span class="st">"hctvb_xxx"</span>, channel=<span class="st">"bot-playground"</span>)
 
 asyncio.run(main())</code></pre>
+
+<!-- ERROR HANDLING -->
+<h2 id="errors">Error Handling</h2>
+<p>Moderation and message errors are delivered via the <code>on_moderation_error</code> event — they do not raise exceptions.</p>
+<pre><code><span class="op">@</span>bot.event
+<span class="kw">async def</span> <span class="fn">on_moderation_error</span>(error, channel):
+    <span class="bi">print</span>(<span class="st">f"</span>{error.code}<span class="st">: </span>{error.message}<span class="st">"</span>)
+    <span class="kw">if</span> error.restriction:
+        <span class="bi">print</span>(<span class="st">f"Restriction: </span>{error.restriction.type}<span class="st">"</span>)</code></pre>
+<p>Calling methods before the bot is connected raises <code>RuntimeError</code>:</p>
+<pre><code><span class="kw">try</span>:
+    <span class="kw">await</span> bot.send(<span class="st">"hello"</span>)
+<span class="kw">except</span> <span class="bi">RuntimeError</span> <span class="kw">as</span> e:
+    <span class="bi">print</span>(e)  <span class="cm"># "Bot is not connected"</span></code></pre>
 
 <!-- MODELS -->
 <h2 id="models">Models Reference</h2>

@@ -1,10 +1,48 @@
 # hctvwrapper
 
+[![PyPI version](https://img.shields.io/pypi/v/hctvwrapper)](https://pypi.org/project/hctvwrapper/)
+[![Python version](https://img.shields.io/pypi/pyversions/hctvwrapper)](https://pypi.org/project/hctvwrapper/)
+[![License](https://img.shields.io/github/license/christianwell/hctvwrapper)](https://github.com/christianwell/hctvwrapper/blob/main/LICENSE)
+
 A Pycord-style Python wrapper for [hackclub.tv](https://hackclub.tv). Build chat bots with decorators — no boilerplate.
+
+## Features
+
+- **Decorator-based events & commands** — register handlers with `@bot.event` and `@bot.command()`
+- **Multi-channel support** — connect to multiple channels in a single bot
+- **Moderation tools** — timeout, ban, unban, and delete messages programmatically
+- **Emoji lookup** — resolve emoji names to Unicode
+- **Async-first** — built on `asyncio` and `websockets`
+- **Fully typed** — dataclass models for every API object
+
+## Table of Contents
+
+- [Installation](#installation)
+- [Documentation](#documentation)
+- [Quick Start](#quick-start)
+- [Getting a Bot Token](#getting-a-bot-token)
+- [Guide](#guide)
+  - [Events](#events)
+  - [Commands](#commands)
+  - [Context](#context)
+  - [Sending Messages](#sending-messages)
+  - [Multi-Channel](#multi-channel)
+  - [Moderation](#moderation)
+  - [Async Entry Point](#async-entry-point)
+- [Models Reference](#models-reference)
+- [Requirements](#requirements)
+- [Contributing](#contributing)
+- [License](#license)
+
+## Installation
 
 ```
 pip install hctvwrapper
 ```
+
+## Documentation
+
+Full API reference and usage guide: [`docs/hackclub-tv.md`](docs/hackclub-tv.md)
 
 ## Quick Start
 
@@ -217,6 +255,10 @@ asyncio.run(main())
 
 - Python 3.10+
 - `websockets` (only dependency)
+
+## Contributing
+
+Contributions are welcome! Feel free to [open an issue](https://github.com/christianwell/hctvwrapper/issues) or submit a pull request.
 
 ## License
 
