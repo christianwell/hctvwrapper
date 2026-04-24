@@ -1,36 +1,26 @@
-# hctvwrapper v0.1.0
+# hctvwrapper
 
-A Pycord-style Python wrapper for [hackclub.tv](https://hackclub.tv)
+A Python wrapper for [hackclub.tv](https://hackclub.tv) bots. If you've used Discord.py or Pycord, this will feel familiar.
 
 ---
 
 ## Table of Contents
 
 - [Install](#install)
-- [Getting a Bot Token](#getting-a-bot-token)
-- [Quick Start](#quick-start)
-- [Bot](#bot)
-  - [Properties](#properties)
-  - [Methods](#methods)
+- [Get a Bot Token](#get-a-bot-token)
+- [Your First Bot](#your-first-bot)
 - [Events](#events)
-  - [on_ready](#on_readysession)
-  - [on_message](#on_messagemessage)
-  - [on_history](#on_historymessages)
-  - [on_system_message](#on_system_messagemessage)
-  - [on_message_deleted](#on_message_deletedevent)
-  - [on_chat_access](#on_chat_accessaccess-channel)
-  - [on_moderation_error](#on_moderation_errorerror-channel)
-  - [on_emoji_response](#on_emoji_responseemojis)
-  - [on_emoji_search](#on_emoji_searchresults)
 - [Commands](#commands)
-- [Context](#context)
+- [Context — the `ctx` object](#context--the-ctx-object)
 - [Sending Messages](#sending-messages)
-- [Multi-Channel](#multi-channel)
+- [Checking User Roles](#checking-user-roles)
+- [Multiple Channels](#multiple-channels)
 - [Moderation](#moderation)
 - [Emojis](#emojis)
-- [Async Usage](#async-usage)
+- [Auto-Reconnect](#auto-reconnect)
 - [Error Handling](#error-handling)
-- [Models Reference](#models-reference)
+- [Async Usage](#async-usage)
+- [All Models](#all-models)
 - [Examples](#examples)
 
 ---
@@ -41,166 +31,161 @@ A Pycord-style Python wrapper for [hackclub.tv](https://hackclub.tv)
 pip install hctvwrapper
 ```
 
-Only dependency: `websockets` — requires Python 3.10+
+That's it. The only dependency is `websockets`. You need Python 3.10 or newer.
 
-## Getting a Bot Token
+---
+
+## Get a Bot Token
 
 1. Go to [hackclub.tv](https://hackclub.tv)
-2. Create a bot account and get your API key (starts with `hctvb_`)
-3. Set it as an environment variable: `export BOT_TOKEN=hctvb_xxx`
+2. Create a bot account
+3. Copy the API key — it starts with `hctvb_`
+4. Save it somewhere safe (never share it!)
 
-## Quick Start
+Set it as an environment variable so your code doesn't contain the token:
+
+```bash
+export BOT_TOKEN=hctvb_your_key_here
+```
+
+---
+
+## Your First Bot
 
 ```python
+import os
 from hctvwrapper import Bot
 
+# 1. Create a bot — "!" means commands start with !
 bot = Bot(command_prefix="!")
 
+# 2. This runs when the bot connects
 @bot.event
 async def on_ready(session):
-    print(f"Logged in as {session.viewer}")
+    print(f"Bot is online! Logged in as {session.viewer}")
 
+# 3. This runs when someone types !ping
 @bot.command()
 async def ping(ctx):
     await ctx.reply("pong! 🏓")
 
-bot.run("hctvb_your_token", channel="bot-playground")
+# 4. Start the bot
+bot.run(os.environ["BOT_TOKEN"], channel="bot-playground")
 ```
 
-## Bot
+Run it:
 
-The `Bot` class is the main entry point. It handles connections, events, and commands.
-
-```python
-bot = Bot(command_prefix="!")  # prefix for commands, default "!"
+```bash
+python my_bot.py
 ```
 
-### Properties
+That's a working bot! Type `!ping` in chat and it replies `@you pong! 🏓`.
 
-| Property | Type | Description |
-|----------|------|-------------|
-| `bot.session` | `Session \| None` | Session info after connecting |
-| `bot.connected_channels` | `list[str]` | List of connected channel names |
-| `bot.is_connected` | `bool` | Whether the bot is connected to any channel |
-| `bot.command_prefix` | `str` | The command prefix |
-
-### Methods
-
-| Method | Description |
-|--------|-------------|
-| `bot.run(token, channel=, channels=)` | Blocking entry point — starts the bot |
-| `await bot.start(token, channel=, channels=)` | Async entry point |
-| `await bot.send(content, channel=)` | Send a message |
-| `bot.is_connected_to(channel)` | Check if connected to a specific channel |
+---
 
 ## Events
 
-Register event handlers with `@bot.event`. The function name determines which event it handles.
+Events let your bot react to things that happen in chat. Use `@bot.event` and name the function after the event you want.
 
-### on_ready(session)
+### on_ready — bot connected
 
-Fired once when the bot connects and receives session info.
+Runs **once** when the bot first connects (even if you join multiple channels).
 
 ```python
 @bot.event
 async def on_ready(session):
     print(f"Logged in as {session.viewer.username}")
     print(f"Can moderate: {session.permissions.can_moderate}")
-    print(f"Max msg length: {session.moderation.max_message_length}")
 ```
 
-### on_message(message)
+### on_message — someone sent a message
 
-Fired on every incoming chat message.
+Runs every time anyone sends a message.
 
 ```python
 @bot.event
 async def on_message(message):
-    print(f"[{message.channel}] {message.author.username}: {message.content}")
+    print(f"{message.author.username}: {message.content}")
+
+    # You can check things about the message:
+    # message.channel    — which channel it's in
+    # message.author     — who sent it (Author object)
+    # message.msg_id     — unique ID of the message
+    # message.is_bot     — True if sent by a bot
 ```
 
-### on_history(messages)
+### on_history — old messages on connect
 
-Fired once on connect with up to 100 recent messages.
+When your bot connects, it gets up to 100 recent messages.
 
 ```python
 @bot.event
 async def on_history(messages):
-    print(f"Got {len(messages)} historical messages")
+    print(f"Got {len(messages)} old messages")
 ```
 
-### on_system_message(message)
-
-Fired on system notifications (bans, unbans, etc.).
+### on_system_message — bans, unbans, etc.
 
 ```python
 @bot.event
 async def on_system_message(message):
     print(f"System: {message.content}")
+    # Example: "someone was banned."
 ```
 
-### on_message_deleted(event)
-
-Fired when a message is deleted by a moderator.
+### on_message_deleted — a mod deleted a message
 
 ```python
 @bot.event
 async def on_message_deleted(event):
-    print(f"Deleted {event.msg_id} in {event.channel}")
+    print(f"Message {event.msg_id} was deleted in {event.channel}")
 ```
 
-### on_chat_access(access, channel)
-
-Fired when chat permissions change (timeouts, bans).
+### on_chat_access — your bot got timed out or banned
 
 ```python
 @bot.event
 async def on_chat_access(access, channel):
-    print(f"Can send in {channel}: {access.can_send}")
-    if access.restriction:
-        print(f"Restriction: {access.restriction.type}")
+    if access.can_send:
+        print("We can chat!")
+    else:
+        print(f"We're restricted: {access.restriction.type}")
+        # access.restriction.type is "timeout" or "ban"
+        # access.restriction.reason has the reason
 ```
 
-### on_moderation_error(error, channel)
-
-Fired when a moderation action or message is rejected.
+### on_disconnect — lost connection
 
 ```python
 @bot.event
-async def on_moderation_error(error, channel):
-    print(f"Error: {error.code} — {error.message}")
+async def on_disconnect(channel):
+    print(f"Lost connection to {channel}")
 ```
 
-> **ℹ Error codes:** FORBIDDEN, RATE_LIMIT, SLOW_MODE, TIMED_OUT, BANNED, MESSAGE_TOO_LONG, BLOCKED_TERM, INVALID_TARGET, INVALID_REQUEST, NOT_FOUND
-
-### on_emoji_response(emojis)
-
-Fired when emoji URL lookups complete (in response to `bot.lookup_emojis()`).
+### on_reconnect — reconnected after a drop
 
 ```python
 @bot.event
-async def on_emoji_response(emojis):
-    # emojis is a dict mapping emoji names to URLs
-    # e.g. {"yay": "https://...", "aga": "https://..."}
-    for name, url in emojis.items():
-        print(f":{name}: → {url}")
+async def on_reconnect(channel):
+    print(f"Back online in {channel}!")
 ```
 
-### on_emoji_search(results)
+### on_error — something crashed
 
-Fired when an emoji search completes (in response to `bot.search_emojis()`).
+Runs when an event handler or command throws an error. Without this, errors are just logged.
 
 ```python
 @bot.event
-async def on_emoji_search(results):
-    # results is a list of matching emoji names
-    # e.g. ["yay", "yay-bounce", "yay-spin", ...]
-    print(f"Found {len(results)} emojis: {results}")
+async def on_error(source, error):
+    # source is like "on_message" or "command:ping"
+    print(f"Error in {source}: {error}")
 ```
+
+---
 
 ## Commands
 
-Register prefix commands with `@bot.command()`. The bot automatically parses messages that start with the prefix.
+Commands are messages that start with your prefix (like `!`). The bot parses them automatically.
 
 ### Simple command
 
@@ -210,7 +195,9 @@ async def ping(ctx):
     await ctx.reply("pong!")
 ```
 
-### Named command with aliases
+`!ping` → `@user pong!`
+
+### Command with a different name
 
 ```python
 @bot.command(name="say", aliases=["echo", "repeat"])
@@ -218,7 +205,12 @@ async def say_cmd(ctx, *, text):
     await ctx.send(text)
 ```
 
-### Positional arguments
+`!say hello world` → `hello world`
+`!echo hello world` → `hello world` (alias works too)
+
+### Command with arguments
+
+Arguments are split by spaces:
 
 ```python
 @bot.command()
@@ -226,52 +218,130 @@ async def greet(ctx, name, greeting="hello"):
     await ctx.reply(f"{greeting}, {name}!")
 ```
 
-### Keyword-only (rest of message)
+`!greet Alice` → `@user hello, Alice!`
+`!greet Alice hey` → `@user hey, Alice!`
 
-Use `*, text` to capture everything after the command as a single string:
+If someone forgets a required argument, the bot tells them:
+
+`!greet` → `@user missing arguments: name`
+
+### Grab the whole message
+
+Use `*, text` to get everything after the command as one string:
 
 ```python
 @bot.command()
 async def echo(ctx, *, text):
     await ctx.reply(text)
-# !echo hello world foo  →  text = "hello world foo"
 ```
 
-> **ℹ Note:** The bot automatically ignores its own messages to prevent loops.
+`!echo hello world foo` → `@user hello world foo`
 
-## Context
+---
 
-The `ctx` object passed to every command handler:
+## Context — the `ctx` object
 
-| Property / Method | Description |
-|-------------------|-------------|
-| `ctx.message` | The full `Message` object |
-| `ctx.author` | Shortcut to `message.author` (`Author`) |
-| `ctx.channel` | Channel name (`str`) |
-| `ctx.content` | Raw message content |
-| `ctx.bot` | Reference to the `Bot` |
-| `await ctx.reply(text)` | Send `@username text` |
-| `await ctx.send(text)` | Send without mention |
-| `await ctx.delete()` | Delete triggering message (needs mod perms) |
+Every command gets a `ctx` (context) object. It has everything you need:
+
+```python
+@bot.command()
+async def info(ctx):
+    ctx.message     # the full Message object
+    ctx.author      # who sent the command (Author)
+    ctx.channel     # channel name (string)
+    ctx.bot         # the Bot itself
+
+    await ctx.reply("hi")     # sends "@username hi"
+    await ctx.send("hi")      # sends "hi" (no mention)
+    await ctx.delete()        # deletes the command message (needs mod perms)
+```
+
+---
 
 ## Sending Messages
 
 ```python
-# in a command
-await ctx.reply("mentioned reply")
-await ctx.send("plain message")
+# Inside a command — easiest way
+await ctx.reply("hello!")       # @user hello!
+await ctx.send("hello!")        # hello! (no mention)
 
-# anywhere
+# From anywhere (if you have the bot)
 await bot.send("hello!", channel="bot-playground")
 ```
 
-## Multi-Channel
+---
+
+## Checking User Roles
+
+Every user has a `channel_role`. You can check it easily:
+
+```python
+@bot.command()
+async def whoami(ctx):
+    author = ctx.author
+
+    # Quick checks — returns True/False
+    author.is_owner           # channel owner
+    author.is_manager         # channel manager
+    author.is_moderator       # chat or bot moderator
+    author.is_staff           # any of the above (owner/manager/mod)
+    author.is_bot             # is a bot account
+    author.is_platform_admin  # hackclub.tv admin
+
+    # Check specific roles
+    author.has_role("owner", "manager")  # True if owner OR manager
+
+    # Get the raw role string
+    author.channel_role  # "owner" / "manager" / "chatModerator" / "botModerator" / None
+```
+
+### Example: owner-only command
+
+```python
+@bot.command()
+async def secret(ctx):
+    if not ctx.author.is_owner:
+        await ctx.reply("only the channel owner can use this!")
+        return
+    await ctx.reply("you're the boss 👑")
+```
+
+### Example: staff-only moderation
+
+```python
+@bot.command()
+async def kick(ctx, user_id):
+    if not ctx.author.is_staff:
+        await ctx.reply("you don't have permission!")
+        return
+    await bot.timeout_user(ctx.channel, user_id=user_id, duration=60)
+    await ctx.send(f"⏰ timed out for 60s")
+```
+
+### Role hierarchy
+
+From lowest to highest:
+
+| Role | Value |
+|------|-------|
+| `None` (regular viewer) | — |
+| `chatModerator` | can moderate chat |
+| `botModerator` | can moderate bots |
+| `manager` | can manage the channel |
+| `owner` | owns the channel |
+| platform admin | hackclub.tv staff |
+
+---
+
+## Multiple Channels
+
+Connect to several channels at once:
 
 ```python
 bot.run("hctvb_xxx", channels=["channel1", "channel2", "bot-playground"])
 ```
 
-Events and commands work across all channels. Use `message.channel` or `ctx.channel` to know the source.
+Use `ctx.channel` or `message.channel` to know where a message came from:
 
 ```python
 @bot.command()
@@ -279,49 +349,144 @@ async def where(ctx):
     await ctx.reply(f"you're in {ctx.channel}")
 ```
 
+---
+
 ## Moderation
 
-Bots with moderation permissions can manage users:
+Your bot needs mod permissions for these. Check with `session.permissions.can_moderate`.
 
 ```python
-# Timeout (10–86400 seconds, default 300)
+# Timeout someone for 5 minutes (300 seconds)
 await bot.timeout_user("channel", user_id="user123", duration=300, reason="spam")
 
-# Ban
-await bot.ban_user("channel", user_id="user123", reason="violations")
+# Ban someone permanently
+await bot.ban_user("channel", user_id="user123", reason="goodbye")
 
-# Remove timeout
+# Undo a timeout
 await bot.lift_timeout("channel", user_id="user123")
 
-# Unban
+# Undo a ban
 await bot.unban_user("channel", user_id="user123")
 
 # Delete a message
-await bot.delete_message("channel", msg_id="msg-uuid")
+await bot.delete_message("channel", msg_id="message-uuid")
 ```
+
+Timeout duration must be between 10 and 86400 seconds (10s to 24h). Default is 300 (5 min).
+
+---
 
 ## Emojis
 
-Look up or search Slack-style emojis. Results come back via events.
+Look up or search for Slack-style emojis. Results come back through events.
 
 ```python
-# Look up emoji URLs
+# Look up emoji URLs by name
 await bot.lookup_emojis(["yay", "aga"])
 
-# Search emojis
+# Search for emojis matching a term
 await bot.search_emojis("yay")
 
-# Handle results
+# Get the results
 @bot.event
 async def on_emoji_response(emojis):
     # emojis = {"yay": "https://...", "aga": "https://..."}
-    print(emojis)
+    for name, url in emojis.items():
+        print(f":{name}: → {url}")
 
 @bot.event
 async def on_emoji_search(results):
     # results = ["yay", "yay-bounce", "yay-spin", ...]
-    print(results)
+    print(f"Found: {results}")
 ```
+
+---
+
+## Auto-Reconnect
+
+By default, if your bot loses connection, it automatically reconnects with exponential backoff (waits 1s, 2s, 4s, 8s... up to 60s between attempts).
+
+```python
+# Default: auto-reconnect forever
+bot = Bot(command_prefix="!")
+
+# Limit to 10 reconnect attempts
+bot = Bot(command_prefix="!", reconnect_max_attempts=10)
+
+# Disable auto-reconnect entirely
+bot = Bot(command_prefix="!", auto_reconnect=False)
+```
+
+Use `on_disconnect` and `on_reconnect` events to know when it happens:
+
+```python
+@bot.event
+async def on_disconnect(channel):
+    print(f"Lost connection to {channel}, reconnecting...")
+
+@bot.event
+async def on_reconnect(channel):
+    print(f"Back online in {channel}!")
+```
+
+### Shutting down cleanly
+
+```python
+# Inside an async function
+await bot.close()  # disconnects everything, stops reconnecting
+```
+
+---
+
+## Error Handling
+
+### Server errors (rejected messages, no permissions)
+
+These come through the `on_moderation_error` event:
+
+```python
+@bot.event
+async def on_moderation_error(error, channel):
+    print(f"[{channel}] {error.code}: {error.message}")
+```
+
+Possible error codes:
+
+| Code | What happened |
+|------|---------------|
+| `FORBIDDEN` | You don't have permission |
+| `RATE_LIMIT` | Sending messages too fast |
+| `SLOW_MODE` | Slow mode is on, wait a bit |
+| `TIMED_OUT` | Your bot is timed out |
+| `BANNED` | Your bot is banned |
+| `MESSAGE_TOO_LONG` | Message is too long |
+| `BLOCKED_TERM` | Message contains a blocked word |
+| `INVALID_TARGET` | Tried to mod someone who doesn't exist |
+| `INVALID_REQUEST` | Bad moderation command |
+| `NOT_FOUND` | Tried to delete a message that doesn't exist |
+
+### Code errors (bugs in your handlers)
+
+If your command or event handler crashes, the bot catches it and logs it instead of dying. You can also handle it yourself:
+
+```python
+@bot.event
+async def on_error(source, error):
+    print(f"Bug in {source}: {error}")
+```
+
+### Not connected
+
+If you try to send a message when not connected, you get a `RuntimeError`:
+
+```python
+try:
+    await bot.send("hello!")
+except RuntimeError as e:
+    print(f"Not connected: {e}")
+```
+
+---
 
 ## Async Usage
 
@@ -329,6 +494,7 @@ If you manage your own event loop, use `await bot.start()` instead of `bot.run()
 
 ```python
 import asyncio
+from hctvwrapper import Bot
 
 async def main():
     bot = Bot(command_prefix="!")
@@ -342,116 +508,80 @@ async def main():
 asyncio.run(main())
 ```
 
-## Error Handling
+---
 
-Errors from the hackclub.tv server (rejected messages, failed moderation actions) are delivered via the `on_moderation_error` event:
-
-```python
-@bot.event
-async def on_moderation_error(error, channel):
-    print(f"[{channel}] {error.code}: {error.message}")
-    if error.restriction:
-        print(f"  Restriction: {error.restriction.type}, expires: {error.restriction.expires_at}")
-```
-
-The `error.code` will be one of: `FORBIDDEN`, `RATE_LIMIT`, `SLOW_MODE`, `TIMED_OUT`, `BANNED`, `MESSAGE_TOO_LONG`, `BLOCKED_TERM`, `INVALID_TARGET`, `INVALID_REQUEST`, `NOT_FOUND`.
-
-If the bot attempts to send a message while not connected to any channel, a `RuntimeError` is raised:
-
-```python
-try:
-    await bot.send("hello!")
-except RuntimeError as e:
-    print(f"Not connected: {e}")
-```
-
-## Models Reference
-
-### Message
-
-| Field | Type | Description |
-|-------|------|-------------|
-| `content` | `str` | Message text |
-| `author` | `Author` | Who sent it |
-| `channel` | `str` | Channel name |
-| `msg_id` | `str \| None` | Server message UUID |
-| `timestamp` | `float` | Unix timestamp |
-| `type` | `str` | `"message"` or `"systemMsg"` |
-| `is_bot` | `bool` | Whether the author is a bot |
+## All Models
 
 ### Author
 
-| Field | Type | Description |
-|-------|------|-------------|
-| `id` | `str` | User ID |
-| `username` | `str` | Username |
-| `display_name` | `str \| None` | Display name |
-| `pfp_url` | `str \| None` | Profile picture URL |
-| `is_bot` | `bool` | Is a bot account |
-| `is_platform_admin` | `bool` | Is a platform admin |
-| `channel_role` | `str \| None` | `owner`, `manager`, `chatModerator`, `botModerator`, or `None` |
+The person who sent a message.
+
+| Field | Type | What it is |
+|-------|------|------------|
+| `id` | `str` | Their user ID |
+| `username` | `str` | Their username |
+| `display_name` | `str or None` | Their display name (if set) |
+| `pfp_url` | `str or None` | Profile picture URL |
+| `channel_role` | `str or None` | `"owner"`, `"manager"`, `"chatModerator"`, `"botModerator"`, or `None` |
+| `is_bot` | `bool` | Is this a bot? |
+| `is_platform_admin` | `bool` | Is this a hackclub.tv admin? |
+| `is_owner` | `bool` | Is this the channel owner? |
+| `is_manager` | `bool` | Is this a channel manager? |
+| `is_moderator` | `bool` | Is this a chat or bot moderator? |
+| `is_staff` | `bool` | Is this owner, manager, or mod? |
+
+Methods: `has_role("owner", "manager")` — returns True if the user has any of those roles.
+
+### Message
+
+A chat message.
+
+| Field | Type | What it is |
+|-------|------|------------|
+| `content` | `str` | The message text |
+| `author` | `Author` | Who sent it |
+| `channel` | `str` | Which channel |
+| `msg_id` | `str or None` | Unique message ID |
+| `timestamp` | `float` | When it was sent (unix time) |
+| `is_bot` | `bool` | Was it sent by a bot? |
 
 ### Session
 
-| Field | Type | Description |
-|-------|------|-------------|
-| `viewer` | `Author \| None` | The bot's own user info |
-| `permissions` | `Permissions` | `.can_moderate` — bool |
-| `moderation` | `ModerationSettings` | `.has_blocked_terms`, `.slow_mode_seconds`, `.max_message_length` |
+Info about your bot's connection.
 
-### ChatAccess
+| Field | Type | What it is |
+|-------|------|------------|
+| `viewer` | `Author or None` | Your bot's user info |
+| `permissions.can_moderate` | `bool` | Can your bot moderate? |
+| `moderation.slow_mode_seconds` | `int` | Slow mode delay (0 = off) |
+| `moderation.max_message_length` | `int` | Max message length (default 400) |
+| `moderation.has_blocked_terms` | `bool` | Are there blocked words? |
 
-| Field | Type | Description |
-|-------|------|-------------|
-| `can_send` | `bool` | Whether the bot can send messages |
-| `restriction` | `Restriction \| None` | Active restriction details |
+### Other Models
 
-### Restriction
+| Model | Fields | Used in |
+|-------|--------|---------|
+| `ChatAccess` | `can_send`, `restriction` | `on_chat_access` event |
+| `Restriction` | `type` (timeout/ban), `reason`, `expires_at` | Inside ChatAccess/ModerationError |
+| `ModerationError` | `code`, `message`, `restriction` | `on_moderation_error` event |
+| `ModerationEvent` | `type`, `msg_id`, `channel` | `on_message_deleted` event |
+| `SystemMessage` | `type`, `channel`, `content`, `timestamp` | `on_system_message` event |
 
-| Field | Type | Description |
-|-------|------|-------------|
-| `type` | `str` | `"timeout"` or `"ban"` |
-| `reason` | `str \| None` | Reason for the restriction |
-| `expires_at` | `str \| None` | ISO 8601 expiry (timeouts) or None (bans) |
-
-### ModerationError
-
-| Field | Type | Description |
-|-------|------|-------------|
-| `code` | `str` | Error code (see list above) |
-| `message` | `str` | Human-readable error message |
-| `restriction` | `Restriction \| None` | Present for TIMED_OUT / BANNED codes |
-
-### ModerationEvent
-
-| Field | Type | Description |
-|-------|------|-------------|
-| `type` | `str` | `"messageDeleted"` |
-| `msg_id` | `str` | UUID of deleted message |
-| `channel` | `str` | Channel name |
-
-### SystemMessage
-
-| Field | Type | Description |
-|-------|------|-------------|
-| `type` | `str` | `"connected"`, `"disconnected"`, `"error"`, `"system"` |
-| `channel` | `str` | Channel name |
-| `content` | `str` | System message text |
-| `timestamp` | `float` | Unix timestamp |
+---
 
 ## Examples
 
 ### Echo Bot
 
 ```python
-from hctvwrapper import Bot
 import os
+from hctvwrapper import Bot
 
 bot = Bot(command_prefix="!")
 
 @bot.event
 async def on_ready(session):
-    print(f"✅ Logged in as {session.viewer}")
+    print(f"✅ Online as {session.viewer}")
 
 @bot.command()
 async def ping(ctx):
@@ -464,11 +594,35 @@ async def echo_cmd(ctx, *, text):
 bot.run(os.environ["BOT_TOKEN"], channel="bot-playground")
 ```
 
+### Staff-Only Bot
+
+```python
+import os
+from hctvwrapper import Bot
+
+bot = Bot(command_prefix="!")
+
+@bot.command()
+async def timeout(ctx, user_id, seconds="300"):
+    if not ctx.author.is_staff:
+        await ctx.reply("no permission!")
+        return
+    await bot.timeout_user(ctx.channel, user_id, duration=int(seconds))
+    await ctx.send(f"⏰ Timed out for {seconds}s")
+
+@bot.event
+async def on_moderation_error(error, channel):
+    print(f"⚠️ {error.code}: {error.message}")
+
+bot.run(os.environ["BOT_TOKEN"], channel="my-channel")
+```
+
 ### AI Bot
 
 ```python
+import os
+import aiohttp
 from hctvwrapper import Bot
-import aiohttp, os
 
 bot = Bot(command_prefix="/")
 
@@ -490,26 +644,6 @@ async def ai_cmd(ctx, *, prompt):
 bot.run(os.environ["BOT_TOKEN"], channel="bot-playground")
 ```
 
-### Moderation Bot
-
-```python
-from hctvwrapper import Bot
-import os
-
-bot = Bot(command_prefix="!")
-
-@bot.command()
-async def timeout(ctx, user_id, seconds="300"):
-    await bot.timeout_user(ctx.channel, user_id, duration=int(seconds))
-    await ctx.send(f"⏰ Timed out for {seconds}s")
-
-@bot.event
-async def on_moderation_error(error, channel):
-    print(f"⚠️ {error.code}: {error.message}")
-
-bot.run(os.environ["BOT_TOKEN"], channel="my-channel")
-```
-
 ---
 
-hctvwrapper v0.1.0 · [hackclub.tv](https://hackclub.tv) · [API Docs](https://docs.hackclub.tv/api/chat)
+hctvwrapper · [hackclub.tv](https://hackclub.tv) · [GitHub](https://github.com/christianwell/hctvwrapper)

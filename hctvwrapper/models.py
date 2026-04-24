@@ -16,6 +16,33 @@ class Author:
     def __str__(self) -> str:
         return self.display_name or self.username
 
+    @property
+    def is_owner(self) -> bool:
+        return self.channel_role == "owner"
+
+    @property
+    def is_manager(self) -> bool:
+        return self.channel_role == "manager"
+
+    @property
+    def is_moderator(self) -> bool:
+        return self.channel_role in ("chatModerator", "botModerator")
+
+    @property
+    def is_staff(self) -> bool:
+        """True if the user is owner, manager, or any kind of moderator."""
+        return self.channel_role in ("owner", "manager", "chatModerator", "botModerator")
+
+    def has_role(self, *roles: str) -> bool:
+        """Check if the user has any of the given roles.
+
+        Example::
+
+            if ctx.author.has_role("owner", "manager"):
+                ...
+        """
+        return self.channel_role in roles
+
 
 @dataclass
 class Message:

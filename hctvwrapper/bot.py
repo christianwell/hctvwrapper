@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import inspect
+import logging
 import shlex
 from dataclasses import dataclass, field
 from typing import Any, Callable, Coroutine
@@ -16,6 +17,8 @@ from .connection import (
 )
 from .context import Context
 from .models import Session
+
+log = logging.getLogger("hctvwrapper")
 
 
 @dataclass
@@ -43,13 +46,22 @@ class Bot:
         bot.run("hctvb_xxx", channel="bot-playground")
     """
 
-    def __init__(self, command_prefix: str = "!") -> None:
+    def __init__(
+        self,
+        command_prefix: str = "!",
+        *,
+        auto_reconnect: bool = True,
+        reconnect_max_attempts: int = 0,
+    ) -> None:
         self.command_prefix = command_prefix
         self.session: Session | None = None
 
+        self._auto_reconnect = auto_reconnect
+        self._reconnect_max_attempts = reconnect_max_attempts
         self._connection: ConnectionManager | None = None
         self._events: dict[str, Callable[..., Coroutine[Any, Any, None]]] = {}
         self._commands: dict[str, Command] = {}
+        self._ready_fired = False
 
     # -- decorators -----------------------------------------------------------
 
@@ -58,7 +70,8 @@ class Bot:
 
         Supported events:
             on_ready, on_message, on_history, on_system_message,
-            on_message_deleted, on_chat_access, on_moderation_error
+            on_message_deleted, on_chat_access, on_moderation_error,
+            on_disconnect, on_reconnect, on_error
         """
         self._events[func.__name__] = func
         return func
@@ -216,12 +229,30 @@ class Bot:
         if not channel_list:
             raise ValueError("Provide at least one channel via channel= or channels=")
 
-        self._connection = ConnectionManager(token)
+        self._ready_fired = False
+        self._connection = ConnectionManager(
+            token,
+            auto_reconnect=self._auto_reconnect,
+            reconnect_max_attempts=self._reconnect_max_attempts,
+        )
+        self._connection._on_disconnect = self._handle_disconnect
+        self._connection._on_reconnect = self._handle_reconnect
 
         for ch in channel_list:
             await self._connection.connect(ch, self._dispatch)
 
         await self._connection.wait()
+
+    async def close(self) -> None:
+        """Gracefully disconnect from all channels and stop the bot."""
+        if self._connection:
+            await self._connection.close()
+
+    async def _handle_disconnect(self, channel: str) -> None:
+        await self._fire("on_disconnect", channel)
+
+    async def _handle_reconnect(self, channel: str) -> None:
+        await self._fire("on_reconnect", channel)
 
     # -- internal dispatch ----------------------------------------------------
 
@@ -233,7 +264,9 @@ class Bot:
 
         if msg_type == "session":
             self.session = parse_session(data)
-            await self._fire("on_ready", self.session)
+            if not self._ready_fired:
+                self._ready_fired = True
+                await self._fire("on_ready", self.session)
             return
 
         if msg_type == "history":
@@ -288,7 +321,20 @@ class Bot:
     async def _fire(self, event_name: str, *args: Any) -> None:
         handler = self._events.get(event_name)
         if handler:
-            await handler(*args)
+            try:
+                await handler(*args)
+            except Exception as exc:
+                log.exception("Error in event handler %s", event_name)
+                await self._fire_error(event_name, exc)
+
+    async def _fire_error(self, source: str, exc: Exception) -> None:
+        """Invoke on_error if registered, without recursing."""
+        handler = self._events.get("on_error")
+        if handler:
+            try:
+                await handler(source, exc)
+            except Exception:
+                log.exception("Error in on_error handler")
 
     async def _process_commands(self, message: 'Message') -> None:
         if not message.content.startswith(self.command_prefix):
@@ -313,23 +359,41 @@ class Bot:
 
         ctx = Context(message, self)
 
-        # Inspect the callback signature to determine how to pass args
-        sig = inspect.signature(cmd.callback)
-        params = list(sig.parameters.values())
+        try:
+            # Inspect the callback signature to determine how to pass args
+            sig = inspect.signature(cmd.callback)
+            params = list(sig.parameters.values())
 
-        # First param is always ctx
-        params = params[1:]  # skip ctx
+            # First param is always ctx
+            params = params[1:]  # skip ctx
 
-        if not params:
-            await cmd.callback(ctx)
-        elif any(p.kind == inspect.Parameter.KEYWORD_ONLY for p in params):
-            # *, text style — pass the entire rest as a keyword arg
-            kw_param = next(p for p in params if p.kind == inspect.Parameter.KEYWORD_ONLY)
-            await cmd.callback(ctx, **{kw_param.name: rest})
-        else:
-            # Positional args — split by whitespace
-            try:
-                args = shlex.split(rest) if rest else []
-            except ValueError:
-                args = rest.split() if rest else []
-            await cmd.callback(ctx, *args)
+            if not params:
+                await cmd.callback(ctx)
+            elif any(p.kind == inspect.Parameter.KEYWORD_ONLY for p in params):
+                # *, text style — pass the entire rest as a keyword arg
+                kw_param = next(p for p in params if p.kind == inspect.Parameter.KEYWORD_ONLY)
+                await cmd.callback(ctx, **{kw_param.name: rest})
+            else:
+                # Positional args — split by whitespace
+                try:
+                    args = shlex.split(rest) if rest else []
+                except ValueError:
+                    args = rest.split() if rest else []
+
+                # Check required arg count
+                required = sum(
+                    1
+                    for p in params
+                    if p.default is inspect.Parameter.empty
+                    and p.kind
+                    in (inspect.Parameter.POSITIONAL_ONLY, inspect.Parameter.POSITIONAL_OR_KEYWORD)
+                )
+                if len(args) < required:
+                    names = [p.name for p in params[:required]]
+                    await ctx.reply(f"missing arguments: {', '.join(names[len(args):])}")
+                    return
+
+                await cmd.callback(ctx, *args)
+        except Exception as exc:
+            log.exception("Error in command %s", cmd.name)
+            await self._fire_error(f"command:{cmd.name}", exc)

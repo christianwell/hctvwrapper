@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import logging
 import time
 from typing import Any, Callable, Coroutine
 
@@ -21,10 +22,16 @@ from .models import (
     SystemMessage,
 )
 
+log = logging.getLogger("hctvwrapper")
+
 DEFAULT_BASE_URL = "wss://hackclub.tv/api/stream/chat/ws"
 PING_INTERVAL = 5  # seconds (Cloudflare requirement)
+RECONNECT_BASE_DELAY = 1.0  # seconds
+RECONNECT_MAX_DELAY = 60.0  # seconds
+RECONNECT_MAX_ATTEMPTS = 0  # 0 = unlimited
 
 Dispatcher = Callable[[str, Any], Coroutine[Any, Any, None]]
+LifecycleCallback = Callable[[str], Coroutine[Any, Any, None]]
 
 
 class ChannelConnection:
@@ -66,32 +73,136 @@ class ChannelConnection:
 
 
 class ConnectionManager:
-    def __init__(self, token: str, base_url: str = DEFAULT_BASE_URL):
+    def __init__(
+        self,
+        token: str,
+        base_url: str = DEFAULT_BASE_URL,
+        *,
+        auto_reconnect: bool = True,
+        reconnect_max_attempts: int = RECONNECT_MAX_ATTEMPTS,
+    ):
         self._token = token
         self._base_url = base_url
+        self._auto_reconnect = auto_reconnect
+        self._reconnect_max_attempts = reconnect_max_attempts
         self._connections: dict[str, ChannelConnection] = {}
+        self._reconnect_tasks: dict[str, asyncio.Task[None]] = {}
+        self._closing = False
+        self._on_disconnect: LifecycleCallback | None = None
+        self._on_reconnect: LifecycleCallback | None = None
 
     async def connect(self, channel: str, dispatcher: Dispatcher) -> None:
         if channel in self._connections:
             raise RuntimeError(f"Already connected to channel: {channel}")
 
-        url = f"{self._base_url}/{channel}"
-        headers = {"Authorization": f"Bearer {self._token}"}
-        ws = await websockets.asyncio.client.connect(url, additional_headers=headers)
-
+        ws = await self._open_ws(channel)
         conn = ChannelConnection(ws, channel)
         self._connections[channel] = conn
         await conn.start(dispatcher)
+        log.info("Connected to channel: %s", channel)
+
+        # Wrap the recv task so we detect when it ends (disconnect)
+        original_recv = conn._recv_task
+        conn._recv_task = asyncio.create_task(
+            self._watch_connection(channel, original_recv, dispatcher)
+        )
+
+    async def _open_ws(self, channel: str) -> websockets.asyncio.client.ClientConnection:
+        url = f"{self._base_url}/{channel}"
+        headers = {"Authorization": f"Bearer {self._token}"}
+        return await websockets.asyncio.client.connect(url, additional_headers=headers)
+
+    async def _watch_connection(
+        self,
+        channel: str,
+        recv_task: asyncio.Task[None] | None,
+        dispatcher: Dispatcher,
+    ) -> None:
+        """Wait for recv to end, then trigger reconnect if enabled."""
+        if recv_task is None:
+            return
+        try:
+            await recv_task
+        except asyncio.CancelledError:
+            return
+
+        # Connection dropped
+        log.warning("Disconnected from channel: %s", channel)
+        self._connections.pop(channel, None)
+
+        if self._on_disconnect:
+            try:
+                await self._on_disconnect(channel)
+            except Exception:
+                log.exception("Error in on_disconnect callback")
+
+        if self._auto_reconnect and not self._closing:
+            self._reconnect_tasks[channel] = asyncio.create_task(
+                self._reconnect_loop(channel, dispatcher)
+            )
+
+    async def _reconnect_loop(self, channel: str, dispatcher: Dispatcher) -> None:
+        delay = RECONNECT_BASE_DELAY
+        attempts = 0
+        while not self._closing:
+            attempts += 1
+            if self._reconnect_max_attempts and attempts > self._reconnect_max_attempts:
+                log.error(
+                    "Gave up reconnecting to %s after %d attempts", channel, attempts - 1
+                )
+                return
+
+            log.info("Reconnecting to %s (attempt %d, delay %.1fs)...", channel, attempts, delay)
+            await asyncio.sleep(delay)
+            delay = min(delay * 2, RECONNECT_MAX_DELAY)
+
+            try:
+                ws = await self._open_ws(channel)
+            except Exception:
+                log.warning("Reconnect to %s failed, retrying...", channel)
+                continue
+
+            conn = ChannelConnection(ws, channel)
+            self._connections[channel] = conn
+            await conn.start(dispatcher)
+            log.info("Reconnected to channel: %s", channel)
+
+            # Watch again
+            original_recv = conn._recv_task
+            conn._recv_task = asyncio.create_task(
+                self._watch_connection(channel, original_recv, dispatcher)
+            )
+
+            self._reconnect_tasks.pop(channel, None)
+
+            if self._on_reconnect:
+                try:
+                    await self._on_reconnect(channel)
+                except Exception:
+                    log.exception("Error in on_reconnect callback")
+            return
 
     async def disconnect(self, channel: str | None = None) -> None:
         if channel:
+            # Cancel any pending reconnect
+            task = self._reconnect_tasks.pop(channel, None)
+            if task:
+                task.cancel()
             conn = self._connections.pop(channel, None)
             if conn:
                 await conn.close()
         else:
+            for task in self._reconnect_tasks.values():
+                task.cancel()
+            self._reconnect_tasks.clear()
             for conn in self._connections.values():
                 await conn.close()
             self._connections.clear()
+
+    async def close(self) -> None:
+        """Gracefully shut down all connections and stop reconnecting."""
+        self._closing = True
+        await self.disconnect()
 
     async def send_message(self, content: str, channel: str | None = None) -> None:
         conn = self._get_connection(channel)
@@ -124,11 +235,15 @@ class ConnectionManager:
 
     async def wait(self) -> None:
         """Block until all connections are closed."""
-        tasks = []
-        for conn in self._connections.values():
-            if conn._recv_task:
-                tasks.append(conn._recv_task)
-        if tasks:
+        while not self._closing:
+            tasks: list[asyncio.Task[None]] = []
+            for conn in self._connections.values():
+                if conn._recv_task:
+                    tasks.append(conn._recv_task)
+            for task in self._reconnect_tasks.values():
+                tasks.append(task)
+            if not tasks:
+                break
             await asyncio.gather(*tasks, return_exceptions=True)
 
 
